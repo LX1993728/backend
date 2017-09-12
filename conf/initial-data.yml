@@ -1,0 +1,29 @@
+- !package models
+
+- Company(qjnyggc):
+    name:            俏江南（阳光广场店）
+    location:        http://j.map.baidu.com/VCzLo
+
+- Company(qjncw):
+    name:            俏江南（翠微店）
+    location:        http://j.map.baidu.com/pDYaM
+
+- Manager(adminyggc0):
+    name:            yggc
+    passwd:          123456
+    company:         qjnyggc
+    level:           0
+
+- Manager(adminyggc1):
+    name:            zhangsan
+    passwd:          123456
+    company:         qjnyggc
+    level:           1
+
+- Manager(admincw0):
+    name:            cw
+    passwd:          123456
+    company:         qjncw
+    level:           0
+
+

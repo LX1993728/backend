@@ -1,0 +1,69 @@
+This is your new Play application
+=================================
+
+This file will be packaged with your application, when using `activator dist`.
+
+- run
+  # nohup ./ticket &
+
+- backup
+  run backup.py
+
+- restore
+  (1) tar xzvf files.yyyy-mm-dd.tar.gz
+  (2) createdb -U postgres -O ticketuser ticketdb
+  (3) gunzip -c /dbbackup/ticketdb.yyyy-mm-dd.gz | psql -h localhost -U ticketuser ticketdb
+
+- upgrade
+  (1) from develop platform with latest version: pg_dump -s -h localhost -U ticketuser ticketdb > latest.schema
+  (2) from product platform: pg_dump -s -h localhost -U ticketuser ticketdb > old.schema
+  (3) diff latest.schema old.schema, if some different, change schema
+
+- create self signed certification for company.elable.net and config apache
+openssl genrsa -out company.elable.net.key 2048
+openssl req -new -key company.elable.net.key -out company.elable.net.csr -subj "/C=ZH/ST=Beijing/L=Beijing/O=Haotongxinmeng/CN=company.elable.net/emailAddress=master@elable.net"
+openssl x509 -req -days 3650 -in company.elable.net.csr -signkey company.elable.net.key -out company.elable.net.crt
+
+<VirtualHost *:443>
+ServerName company.elable.net:443
+SSLCertificateFile /etc/pki/tls/certs/company.elable.net.crt
+SSLCertificateKeyFile /etc/pki/tls/private/company.elable.net.key
+ProxyPreserveHost On
+ProxyPass /companies/ http://127.0.0.1:9000/companies/
+ProxyPassReverse /companies/ http://127.0.0.1:9000/companies/
+ProxyPass /managers/ http://127.0.0.1:9000/managers/
+ProxyPassReverse /managers/ http://127.0.0.1:9000/managers/
+</VirtualHost>
+
+- logo in database
+company logo are stored in db as large object. The large object can be import/export to/from database by lo_import/lo_export command, but must be run on server side by super user(postgres):
+$ chmod 777 /tmp/the_red_planet.png
+$ psql -U postgres ticketdb
+ticketdb=# update company set logo = lo_import('/tmp/the_red_planet.png');
+ticketdb=# select logo from company;
+  logo  
+--------
+ 234761
+(1 row)
+
+ticketdb=# ALTER LARGE OBJECT 234761 OWNER TO ticketuser;
+
+- clean logo
+% psql -U ticketuser ticketdb
+ticketdb==>\lo_list
+           Large objects
+   ID   |   Owner    | Description 
+--------+------------+-------------
+ 235113 | ticketuser | 
+ 235464 | ticketuser | 
+ 235465 | ticketuser | 
+ 235466 | ticketuser | 
+...
+(xx rows)
+ticketdb==>select lo_unlink(235113);
+
+NOTE: make sure Large object 235113 is not used any more
+
+curl -v -H "Content-Type:application/json" -X POST -d '{"name":"13910079037", "password":"123456"}' http://localhost:9000/customers/authentication
+curl -v -H "X-AUTH-TOKEN:3S/+7Kla2mGtRbZ+v1VP9g==" http://localhost:9000/customers/32/consumes
+

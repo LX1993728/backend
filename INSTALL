@@ -1,0 +1,130 @@
+1. install CentOS 7
+2. install postgresql
+# yum install postgresql-server
+# postgresql-setup initdb
+# ls -l /var/lib/pgsql/data
+# systemctl enable postgresql.service
+
+3. config postgresql
+# su - postgres
+$ cd data
+$ vim postgresql.conf
+wal_level = archive
+archive_mode = on
+archive_command = 'test ! -f /var/lib/pgsql/backups/%f && cp %p /var/lib/pgsql/backups/%f'
+
+$ vim /var/lib/pgsql/data/pg_hba.conf
+local   all    all                      md5     # replace ident or peer with md5
+host    all    all    127.0.0.1/32      md5
+
+local   replication     postgres        ident
+
+$ vim /var/lib/pgsql/data/postgresql.conf
+max_wal_senders = 1             # max number of walsender processes
+
+
+4. reboot
+
+5. initial db
+# su - postgres
+$ createuser ticketuser -P       # input password 123456
+$ createdb -U postgres -O ticketuser ticketdb
+$ gunzip -c ticketdb_empty.gz | psql -U ticketuser ticketdb
+$ echo "INSERT INTO Admin (id, expiredWhen, name, password, token) VALUES(nextval('hibernate_sequence'), NULL, 'lgr', '\$2a\$10\$ioqws98WR0sCO/y/1ORRceBdfnWnd4lGGvwK08vrSlflN8hckAZFG', NULL);" | psql -U ticketuser ticketdb
+
+6. deploy application and run
+# groupadd yuanbao
+# useradd -g yuanbao yuanbao
+# password yuanbao
+# su - yuanbao
+$ unzip ticket-x.x.x-SNAPSHOT.zip
+$ su -
+
+# vim /usr/lib/systemd/system/ticketd.service
+[Unit]
+Description=yuanbao ticket service
+Requires=postgresql.service
+After=network.target remote-fs.target nss-lookup.target postgresql.service
+
+[Service]
+ExecStart=/home/yuanbao/ticket-2.0.1-SNAPSHOT/bin/ticket
+ExecStop=/bin/kill -9 `cat /home/yuanbao/ticket-2.0.1-SNAPSHOT/RUNNING_PID`
+ExecStopPost=/bin/rm -f /home/yuanbao/ticket-2.0.1-SNAPSHOT/RUNNING_PID
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+# systemctl enable ticketd.service
+# systemctl start ticketd.service
+#
+
+7. install and config apache
+# yum install httpd
+# yum install mod_ssl
+# vim /etc/httpd/conf.d/ticket.conf
+NameVirtualHost *:80
+<VirtualHost *:80>
+    ServerName app.elable.cn
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:9000/
+    ProxyPassReverse / http://127.0.0.1:9000/
+</VirtualHost>
+
+<VirtualHost *:80>
+    ServerName www.elable.cn
+    DocumentRoot  "/var/www/portal"
+    Alias /download /var/www/portal/download.html
+</VirtualHost>
+
+# openssl genrsa -out /etc/pki/tls/private/company.elable.cn.key 2048
+# openssl req -new -key /etc/pki/tls/private/company.elable.cn.key -out company.elable.cn.csr -subj "/C=ZH/ST=Beijing/L=Beijing/O=Yuanbao/CN=company.elable.cn/emailAddress=master@elable.cn"
+# openssl x509 -req -days 3650 -in company.elable.cn.csr -signkey /etc/pki/tls/private/company.elable.cn.key -out /etc/pki/tls/certs/company.elable.cn.crt
+# vim /etc/httpd.conf.d/ssl.conf
+<VirtualHost *:443>
+DocumentRoot "/var/www/company"
+ServerName company.elable.cn:443
+SSLCertificateFile /etc/pki/tls/certs/company.elable.cn.crt
+SSLCertificateKeyFile /etc/pki/tls/private/company.elable.cn.key
+ProxyPreserveHost On
+ProxyPass /companies/ http://127.0.0.1:9000/companies/
+ProxyPassReverse /companies/ http://127.0.0.1:9000/companies/
+ProxyPass /managers/ http://127.0.0.1:9000/managers/
+ProxyPassReverse /managers/ http://127.0.0.1:9000/managers/
+</VirtualHost>
+
+<VirtualHost *:443>
+DocumentRoot "/var/www/admin"
+ServerName admin.elable.cn:443
+SSLCertificateFile /etc/pki/tls/certs/company.elable.cn.crt
+SSLCertificateKeyFile /etc/pki/tls/private/company.elable.cn.key
+ProxyPreserveHost On
+ProxyPass /companies/ http://127.0.0.1:9000/companies/
+ProxyPassReverse /companies/ http://127.0.0.1:9000/companies/
+ProxyPass /admins/ http://127.0.0.1:9000/admins/
+ProxyPassReverse /admins/ http://127.0.0.1:9000/admins/
+</VirtualHost>
+
+# cd /var/www
+# tar xvf company.tar
+# tar xvf admin.tar
+# tar xvf portal.tar
+# sed -i 's/http:\/\/localhost:9000/https:\/\/company.elable.cn/g' /var/www/company/js/app.js
+# sed -i 's/http:\/\/localhost:9000/https:\/\/admin.elable.cn/g' /var/www/admin/js/yuanbao.js
+
+8. config firewall
+# firewall-cmd --get-active-zones
+# firewall-cmd --zone=public --add-service=https --permanent
+# firewall-cmd --reload
+#
+
+9. backup
+# su - postgres
+$ vim backup.sh
+#!/bin/sh
+pg_basebackup -D /var/lib/pgsql/backups/`date "+%Y%m%d%H%M"` -Ft -z -P
+
+$ chmod +x backup.sh
+$ crontab -e
+0 3 * * * /var/lib/pgsql/backup.sh
+
